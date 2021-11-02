@@ -1,8 +1,6 @@
 package app
 
 import (
-	airdropkeeper "github.com/cosmos/cosmos-sdk/x/airdrop/keeper"
-	airdroptypes "github.com/cosmos/cosmos-sdk/x/airdrop/types"
 	"io"
 	"net/http"
 	"os"
@@ -21,8 +19,12 @@ import (
 	dbm "github.com/tendermint/tm-db"
 
 	"strings"
+
 	"github.com/CosmWasm/wasmd/x/wasm"
 	wasmclient "github.com/CosmWasm/wasmd/x/wasm/client"
+	"github.com/althea-net/cosmos-gravity-bridge/module/x/gravity"
+	"github.com/althea-net/cosmos-gravity-bridge/module/x/gravity/keeper"
+	gravitytypes "github.com/althea-net/cosmos-gravity-bridge/module/x/gravity/types"
 	"github.com/cosmos/cosmos-sdk/baseapp"
 	"github.com/cosmos/cosmos-sdk/client/grpc/tmservice"
 	"github.com/cosmos/cosmos-sdk/client/rpc"
@@ -34,6 +36,8 @@ import (
 	"github.com/cosmos/cosmos-sdk/types/module"
 	"github.com/cosmos/cosmos-sdk/version"
 	"github.com/cosmos/cosmos-sdk/x/airdrop"
+	airdropkeeper "github.com/cosmos/cosmos-sdk/x/airdrop/keeper"
+	airdroptypes "github.com/cosmos/cosmos-sdk/x/airdrop/types"
 	"github.com/cosmos/cosmos-sdk/x/auth"
 	"github.com/cosmos/cosmos-sdk/x/auth/ante"
 	authrest "github.com/cosmos/cosmos-sdk/x/auth/client/rest"
@@ -89,6 +93,7 @@ import (
 	upgradeclient "github.com/cosmos/cosmos-sdk/x/upgrade/client"
 	upgradekeeper "github.com/cosmos/cosmos-sdk/x/upgrade/keeper"
 	upgradetypes "github.com/cosmos/cosmos-sdk/x/upgrade/types"
+
 	appparams "github.com/fetchai/fetchd/app/params"
 	tmjson "github.com/tendermint/tendermint/libs/json"
 	tmproto "github.com/tendermint/tendermint/proto/tendermint/types"
@@ -97,9 +102,11 @@ import (
 const Name = "fetchd"
 
 var (
+	// ProposalsEnabled enable all x/wasm proposals.
 	// If EnabledSpecificProposals is "", and this is "true", then enable all x/wasm proposals.
 	// If EnabledSpecificProposals is "", and this is not "true", then disable all x/wasm proposals.
 	ProposalsEnabled = "false"
+	// EnableSpecificProposals allows ot restrict which x/wasm proposals are enabled.
 	// If set to non-empty string it must be comma-separated list of values that are all a subset
 	// of "EnableAllProposals" (takes precedence over ProposalsEnabled)
 	// https://github.com/CosmWasm/wasmd/blob/02a54d33ff2c064f3539ae12d75d027d9c665f05/x/wasm/internal/types/proposal.go#L28-L34
@@ -163,6 +170,7 @@ var (
 		vesting.AppModuleBasic{},
 		wasm.AppModuleBasic{},
 		airdrop.AppModuleBasic{},
+		gravity.AppModuleBasic{},
 	)
 
 	// module account permissions
@@ -175,6 +183,7 @@ var (
 		stakingtypes.NotBondedPoolName: {authtypes.Burner, authtypes.Staking},
 		govtypes.ModuleName:            {authtypes.Burner},
 		ibctransfertypes.ModuleName:    {authtypes.Minter, authtypes.Burner},
+		gravitytypes.ModuleName:        {authtypes.Minter, authtypes.Burner},
 	}
 )
 
@@ -226,6 +235,8 @@ type App struct {
 	TransferKeeper   ibctransferkeeper.Keeper
 	AirdropKeeper    *airdropkeeper.Keeper
 
+	GravityKeeper keeper.Keeper
+
 	// make scoped keepers public for test purposes
 	ScopedIBCKeeper      capabilitykeeper.ScopedKeeper
 	ScopedTransferKeeper capabilitykeeper.ScopedKeeper
@@ -258,7 +269,7 @@ func New(
 		minttypes.StoreKey, distrtypes.StoreKey, slashingtypes.StoreKey,
 		govtypes.StoreKey, paramstypes.StoreKey, ibchost.StoreKey, upgradetypes.StoreKey,
 		evidencetypes.StoreKey, ibctransfertypes.StoreKey, capabilitytypes.StoreKey,
-		wasm.StoreKey, airdroptypes.StoreKey,
+		wasm.StoreKey, airdroptypes.StoreKey, gravitytypes.StoreKey,
 	)
 	tkeys := sdk.NewTransientStoreKeys(paramstypes.TStoreKey)
 	memKeys := sdk.NewMemoryStoreKeys(capabilitytypes.MemStoreKey)
@@ -313,10 +324,19 @@ func New(
 	)
 	app.UpgradeKeeper = upgradekeeper.NewKeeper(skipUpgradeHeights, keys[upgradetypes.StoreKey], appCodec, homePath)
 
+	app.GravityKeeper = keeper.NewKeeper(
+		appCodec,
+		keys[gravitytypes.StoreKey],
+		app.GetSubspace(gravitytypes.ModuleName),
+		stakingKeeper,
+		app.BankKeeper,
+		app.SlashingKeeper,
+	)
+
 	// register the staking hooks
 	// NOTE: stakingKeeper above is passed by reference, so that it will contain these hooks
 	app.StakingKeeper = *stakingKeeper.SetHooks(
-		stakingtypes.NewMultiStakingHooks(app.DistrKeeper.Hooks(), app.SlashingKeeper.Hooks()),
+		stakingtypes.NewMultiStakingHooks(app.DistrKeeper.Hooks(), app.SlashingKeeper.Hooks(), app.GravityKeeper.Hooks()),
 	)
 
 	// ... other modules keepers
@@ -430,6 +450,10 @@ func New(
 		transferModule,
 		wasm.NewAppModule(appCodec, &app.wasmKeeper, app.StakingKeeper),
 		airdrop.NewAppModule(app.AirdropKeeper),
+		gravity.NewAppModule(
+			app.GravityKeeper,
+			app.BankKeeper,
+		),
 	)
 
 	// During begin block slashing happens after distr.BeginBlocker so that
@@ -438,10 +462,10 @@ func New(
 	// NOTE: staking module is required if HistoricalEntries param > 0
 	app.mm.SetOrderBeginBlockers(
 		upgradetypes.ModuleName, minttypes.ModuleName, airdroptypes.ModuleName, distrtypes.ModuleName, slashingtypes.ModuleName,
-		evidencetypes.ModuleName, stakingtypes.ModuleName, ibchost.ModuleName,
+		evidencetypes.ModuleName, stakingtypes.ModuleName, ibchost.ModuleName, gravitytypes.ModuleName,
 	)
 
-	app.mm.SetOrderEndBlockers(crisistypes.ModuleName, govtypes.ModuleName, stakingtypes.ModuleName)
+	app.mm.SetOrderEndBlockers(crisistypes.ModuleName, govtypes.ModuleName, stakingtypes.ModuleName, gravitytypes.ModuleName)
 
 	// NOTE: The genutils module must occur after staking so that pools are
 	// properly initialized with tokens from genesis accounts.
@@ -464,6 +488,7 @@ func New(
 		evidencetypes.ModuleName,
 		ibctransfertypes.ModuleName,
 		wasm.ModuleName,
+		gravitytypes.ModuleName,
 	)
 
 	app.mm.RegisterInvariants(&app.CrisisKeeper)
@@ -662,6 +687,7 @@ func initParamsKeeper(appCodec codec.BinaryMarshaler, legacyAmino *codec.LegacyA
 	paramsKeeper.Subspace(ibchost.ModuleName)
 	paramsKeeper.Subspace(wasm.ModuleName)
 	paramsKeeper.Subspace(airdroptypes.ModuleName)
+	paramsKeeper.Subspace(gravitytypes.ModuleName)
 
 	return paramsKeeper
 }

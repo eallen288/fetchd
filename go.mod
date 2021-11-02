@@ -4,16 +4,19 @@ go 1.16
 
 require (
 	github.com/CosmWasm/wasmd v0.16.0
-	github.com/cosmos/cosmos-sdk v0.42.9
+	github.com/althea-net/cosmos-gravity-bridge/module v0.0.0-20210924213358-cfd398f31f02
+	github.com/cosmos/cosmos-sdk v0.43.0
+	github.com/ethereum/go-ethereum v1.10.3
 	github.com/google/go-cmp v0.5.6 // indirect
 	github.com/gorilla/mux v1.8.0
+	github.com/pkg/errors v0.9.1
 	github.com/prometheus/client_golang v1.10.0
 	github.com/rakyll/statik v0.1.7
 	github.com/spf13/cast v1.3.1
 	github.com/spf13/cobra v1.1.3
-	github.com/tendermint/tendermint v0.34.11
+	github.com/tendermint/tendermint v0.34.12
 	github.com/tendermint/tm-db v0.6.4
-	google.golang.org/genproto v0.0.0-20210617175327-b9e0b3197ced // indirect
+	google.golang.org/genproto v0.0.0-20210903162649-d08c68adba83 // indirect
 )
 
 // fix for "invalid Go type types.Dec for field ..." errors
