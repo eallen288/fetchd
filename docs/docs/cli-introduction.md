@@ -6,22 +6,22 @@ The command line client provides all of the capabilities for interacting with th
 
 While some users will want to connect a node to the network and sync the entire blockchain, for many however, it is quicker and easier to connect directly to existing publically available nodes.
 
-### Connecting to fetchhub mainnet v2 network
+### Connecting to fetchhub mainnet 
 
-To connect to the mainnet v2 network run the following configuration steps:
+To connect to the mainnet run the following configuration steps:
 
 ```bash
-fetchd config chain-id fetchhub-2
+fetchd config chain-id fetchhub-4
 fetchd config node https://rpc-fetchhub.fetch.ai:443
 ```
 
-### Connecting to stargateworld network
+### Connecting to dorado network
 
-To connect to the stargateworld network run the following configuration steps:
+To connect to the dorado network run the following configuration steps:
 
 ```bash
-fetchd config chain-id stargateworld-3
-fetchd config node https://rpc-stargateworld.fetch.ai:443
+fetchd config chain-id dorado-1
+fetchd config node https://rpc-dorado.fetch.ai:443
 ```
 
-Checkout the [Network Information](../networks/) page for more detailed information on the available networks.
+Checkout the [Network Information](../live-networks/) page for more detailed information on the available networks.

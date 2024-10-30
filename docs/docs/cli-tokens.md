@@ -2,7 +2,7 @@
 
 ## Querying your balance
 
-Once `fetchd` is configured for the desired [network](../cli-introduction/). The user can query there balance using the following command:
+Once `fetchd` is configured for the desired [network](../cli-introduction/). The user can query their balance using the following command:
 
 ```bash
 fetchd query bank balances fetch1akvyhle79nts4rwn075t85xrwmp5ysuqynxcn4
@@ -21,6 +21,8 @@ pagination:
 
 
 ## Sending funds
+
+Before sending funds, make sure the sender address has tokens available by querying your balance as shown above. Checkout the [Token Faucet](../faucet/) page for more information on how to add test tokens to your address.
 
 To send funds from one address to another address then you would use the `tx send` subcommand. As shown below:
 
@@ -71,7 +73,7 @@ height: "0"
 info: ""
 logs: []
 raw_log: 'signature verification failed; please verify account number (5815) and chain-id
-  (stargateworld-1): unauthorized'
+  (dorado-1): unauthorized'
 timestamp: ""
 tx: null
 txhash: 23701B052B423D63EB4AC94773B5B8227B03A576692A57999E92F2554F2372D4

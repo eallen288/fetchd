@@ -3,15 +3,11 @@ package cmd
 import (
 	"bufio"
 	"errors"
-	"fmt"
+	"github.com/cosmos/cosmos-sdk/client/pruning"
 	"io"
 	"math/big"
 	"os"
 	"path/filepath"
-
-	"github.com/cosmos/cosmos-sdk/snapshots"
-	"github.com/fetchai/fetchd/app/params"
-	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/CosmWasm/wasmd/x/wasm"
 	wasmkeeper "github.com/CosmWasm/wasmd/x/wasm/keeper"
@@ -23,24 +19,26 @@ import (
 	"github.com/cosmos/cosmos-sdk/client/keys"
 	"github.com/cosmos/cosmos-sdk/client/rpc"
 	"github.com/cosmos/cosmos-sdk/server"
+	serverconfig "github.com/cosmos/cosmos-sdk/server/config"
 	servertypes "github.com/cosmos/cosmos-sdk/server/types"
+	"github.com/cosmos/cosmos-sdk/snapshots"
 	"github.com/cosmos/cosmos-sdk/store"
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	authclient "github.com/cosmos/cosmos-sdk/x/auth/client"
 	authcmd "github.com/cosmos/cosmos-sdk/x/auth/client/cli"
 	"github.com/cosmos/cosmos-sdk/x/auth/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/cosmos/cosmos-sdk/x/crisis"
 	genutilcli "github.com/cosmos/cosmos-sdk/x/genutil/client/cli"
-	"github.com/fetchai/fetchd/app"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/spf13/cast"
 	"github.com/spf13/cobra"
 	tmcli "github.com/tendermint/tendermint/libs/cli"
 	"github.com/tendermint/tendermint/libs/log"
 	dbm "github.com/tendermint/tm-db"
-)
 
-var ChainID string
+	"github.com/fetchai/fetchd/app"
+	"github.com/fetchai/fetchd/app/params"
+)
 
 // NewRootCmd creates a new root command for simd. It is called once in the
 // main function.
@@ -48,17 +46,16 @@ func NewRootCmd() (*cobra.Command, params.EncodingConfig) {
 	// Set config for prefixes
 	app.SetConfig()
 	// Set custom power reduction
-	sdk.PowerReduction = sdk.NewIntFromBigInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
+	sdk.DefaultPowerReduction = sdk.NewIntFromBigInt(new(big.Int).Exp(big.NewInt(10), big.NewInt(18), nil))
 
 	encodingConfig := app.MakeEncodingConfig()
 	initClientCtx := client.Context{}.
-		WithJSONMarshaler(encodingConfig.Marshaler).
+		WithCodec(encodingConfig.Marshaler).
 		WithInterfaceRegistry(encodingConfig.InterfaceRegistry).
 		WithTxConfig(encodingConfig.TxConfig).
 		WithLegacyAmino(encodingConfig.Amino).
 		WithInput(bufio.NewReader(os.Stdin)).
 		WithAccountRetriever(types.AccountRetriever{}).
-		WithBroadcastMode(flags.BroadcastBlock).
 		WithHomeDir(app.DefaultNodeHome).
 		WithViper("FETCH")
 
@@ -66,9 +63,15 @@ func NewRootCmd() (*cobra.Command, params.EncodingConfig) {
 		Use:   app.Name,
 		Short: "fetch.ai cosmos application",
 		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error {
-			initClientCtx = client.ReadHomeFlag(initClientCtx, cmd)
+			cmd.SetOut(cmd.OutOrStdout())
+			cmd.SetErr(cmd.ErrOrStderr())
 
-			initClientCtx, err := config.ReadFromClientConfig(initClientCtx)
+			initClientCtx, err := client.ReadPersistentCommandFlags(initClientCtx, cmd.Flags())
+			if err != nil {
+				return err
+			}
+
+			initClientCtx, err = config.ReadFromClientConfig(initClientCtx)
 			if err != nil {
 				return err
 			}
@@ -77,7 +80,9 @@ func NewRootCmd() (*cobra.Command, params.EncodingConfig) {
 				return err
 			}
 
-			return server.InterceptConfigsPreRunHandler(cmd)
+			customAppTemplate, customAppConfig := initAppConfig()
+
+			return server.InterceptConfigsPreRunHandler(cmd, customAppTemplate, customAppConfig)
 		},
 	}
 
@@ -86,14 +91,43 @@ func NewRootCmd() (*cobra.Command, params.EncodingConfig) {
 	return rootCmd, encodingConfig
 }
 
-func initRootCmd(rootCmd *cobra.Command, encodingConfig params.EncodingConfig) {
-	authclient.Codec = encodingConfig.Marshaler
+// initAppConfig helps to override default appConfig template and configs.
+// return "", nil if no custom configuration is required for the application.
+func initAppConfig() (string, interface{}) {
+	// Optionally allow the chain developer to overwrite the SDK's default
+	// server config.
+	type CustomAppConfig struct {
+		serverconfig.Config
+	}
 
+	srvCfg := serverconfig.DefaultConfig()
+	srvCfg.API.Enable = true
+	// The SDK's default minimum gas price is set to "" (empty value) inside
+	// app.toml. If left empty by validators, the node will halt on startup.
+	// However, the chain developer can set a default app.toml value for their
+	// validators here.
+	//
+	// In summary:
+	// - if you leave srvCfg.MinGasPrices = "", all validators MUST tweak their
+	//   own app.toml config,
+	// - if you set srvCfg.MinGasPrices non-empty, validators CAN tweak their
+	//   own app.toml to override, or use this default value.
+	srvCfg.BaseConfig.MinGasPrices = ""
+
+	// required to deref srvCfg ptr.
+	customAppConfig := CustomAppConfig{
+		Config: *srvCfg,
+	}
+
+	return serverconfig.DefaultConfigTemplate, customAppConfig
+}
+
+func initRootCmd(rootCmd *cobra.Command, encodingConfig params.EncodingConfig) {
 	rootCmd.AddCommand(
 		genutilcli.InitCmd(app.ModuleBasics, app.DefaultNodeHome),
 		config.Cmd(),
 		genutilcli.CollectGenTxsCmd(banktypes.GenesisBalancesIterator{}, app.DefaultNodeHome),
-		AddStargateMigrateCmd(),
+		// AddStakeReconciliationMigrateCmd(),
 		genutilcli.GenTxCmd(app.ModuleBasics, encodingConfig.TxConfig, banktypes.GenesisBalancesIterator{}, app.DefaultNodeHome),
 		genutilcli.ValidateGenesisCmd(app.ModuleBasics),
 		AddGenesisAccountCmd(app.DefaultNodeHome),
@@ -101,6 +135,7 @@ func initRootCmd(rootCmd *cobra.Command, encodingConfig params.EncodingConfig) {
 		tmcli.NewCompletionCmd(rootCmd, true),
 		debug.Cmd(),
 		AddGenesisWasmMsgCmd(app.DefaultNodeHome),
+		utilCommand(),
 	)
 
 	a := appCreator{encodingConfig}
@@ -112,12 +147,14 @@ func initRootCmd(rootCmd *cobra.Command, encodingConfig params.EncodingConfig) {
 		queryCommand(),
 		txCommand(),
 		keys.Commands(app.DefaultNodeHome),
+		pruning.PruningCmd(a.newApp),
 	)
 }
 
 func addModuleInitFlags(startCmd *cobra.Command) {
 	crisis.AddModuleInitFlags(startCmd)
 	wasm.AddModuleInitFlags(startCmd)
+	AddCudosFlags(startCmd)
 }
 
 func queryCommand() *cobra.Command {
@@ -203,13 +240,6 @@ func (a appCreator) newApp(logger log.Logger, db dbm.DB, traceStore io.Writer, a
 		panic(err)
 	}
 
-	// Ensure node don't have snapshot feature enabled until cosmwasm properly support it.
-	// Snapshots would be taken properly but impossible to restore
-	// due to missing cosmwasm chunks.
-	if cast.ToUint64(appOpts.Get(server.FlagStateSyncSnapshotInterval)) > 0 {
-		panic(fmt.Errorf("state-sync snapshots feature is currently not supported, please set %s = 0 in command flags or ~/.fetchd/config/app.toml", server.FlagStateSyncSnapshotInterval))
-	}
-
 	var wasmOpts []wasm.Option
 	if cast.ToBool(appOpts.Get("telemetry.enabled")) {
 		wasmOpts = append(wasmOpts, wasmkeeper.WithVMCacheMetrics(prometheus.DefaultRegisterer))
@@ -219,6 +249,10 @@ func (a appCreator) newApp(logger log.Logger, db dbm.DB, traceStore io.Writer, a
 		logger, db, traceStore, true, skipUpgradeHeights,
 		cast.ToString(appOpts.Get(flags.FlagHome)),
 		cast.ToUint(appOpts.Get(server.FlagInvCheckPeriod)),
+		cast.ToString(appOpts.Get(FlagCudosGenesisPath)),
+		cast.ToString(appOpts.Get(FlagCudosMigrationConfigPath)),
+		cast.ToString(appOpts.Get(FlagCudosGenesisSha256)),
+		cast.ToString(appOpts.Get(FlagCudosMigrationConfigSha256)),
 		a.encCfg,
 		app.GetEnabledProposals(),
 		appOpts,
@@ -259,6 +293,10 @@ func (a appCreator) appExport(
 			map[int64]bool{},
 			homePath,
 			uint(1),
+			"",
+			"",
+			"",
+			"",
 			a.encCfg,
 			app.GetEnabledProposals(),
 			appOpts,
@@ -277,6 +315,10 @@ func (a appCreator) appExport(
 			map[int64]bool{},
 			homePath,
 			uint(1),
+			"",
+			"",
+			"",
+			"",
 			a.encCfg,
 			app.GetEnabledProposals(),
 			appOpts,

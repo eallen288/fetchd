@@ -10,7 +10,7 @@ Assuming that you have followed the [installation guide](../building/). You shou
 fetchd version
 ```
 
-This should print a version number that must be compatible with the network you're connecting to (see the [network page](../networks/) for the list of supported versions per network).
+This should print a version number that must be compatible with the network you're connecting to (see the [network page](../live-networks/) for the list of supported versions per network).
 
 ### Configuring the client fetchd
 
@@ -21,13 +21,13 @@ fetchd config chain-id <chain-id>
 fetchd config node <rpc url>
 ```
 
-### Stargate example
+### Dorado example
 
-In the case of the Stargate network this would be as follows:
+In the case of the Dorado network this would be as follows:
 
 ```bash
-fetchd config chain-id stargateworld-3
-fetchd config node https://rpc-stargateworld.fetch.ai:443
+fetchd config chain-id dorado-1
+fetchd config node https://rpc-dorado.fetch.ai:443
 ```
 
 ### Configuring the server `fetchd`
@@ -43,7 +43,7 @@ fetchd init <moniker-name> --chain-id <chain id>
 Execute the following command to download the latest genesis file:
 
 ```bash
-curl <rpc url>/genesis | jq '.result.genesis' > ~/.fetchd/config/genesis.json
+curl <storage url>/genesis.json --output ~/.fetchd/config/genesis.json
 ```
 
 Finally connect fetchd to the network by getting it to connect to a seed node for the given network.
@@ -52,26 +52,26 @@ Finally connect fetchd to the network by getting it to connect to a seed node fo
 fetchd start --p2p.seeds=<network seed peers>
 ```
 
-**Stargate Example**
+#### Dorado Example
 
-Less abstractly then, if you wants to connect to the Stargate test net for example, you would need to run the following steps:
+Less abstractly then, if you wants to connect to the Dorado test net for example, you would need to run the following steps:
 
 ```bash
 # init
-fetchd init my-first-fetch-node --chain-id stargateworld-3
+fetchd init my-first-fetch-node --chain-id dorado-1
 
 # genesis
-curl https://rpc-stargateworld.fetch.ai/genesis | jq '.result.genesis' > ~/.fetchd/config/genesis.json
+curl https://storage.googleapis.com/fetch-ai-testnet-genesis/genesis-dorado-testing.json --output ~/.fetchd/config/genesis.json
 
 # start
-fetchd start --p2p.seeds=0831c7f4cb4b12fe02b35cc682c7edb03f6df36c@connect-stargateworld.t-v2-london-c.fetch-ai.com:36656
+fetchd start --p2p.seeds=eb9b9717975b49a57e62ea93aa4480e091ae0660@connect-dorado.fetch.ai:36556,46d2f86a255ece3daf244e2ca11d5be0f16cb633@connect-dorado.fetch.ai:36557,066fc564979b1f3173615f101b62448ac7e00eb1@connect-dorado.fetch.ai:36558
 ```
 
-Your local node will then start to synchronise itself with the network, replaying all blocks and transactions up to the current block. Depending on the age of the network and your hard disk speed, this could take a while. 
+Your local node will then start to synchronise itself with the network, replaying all blocks and transactions up to the current block. Depending on the age of the network and your hard disk speed, this could take a while.  Consider using [chain snapshots](../snapshots/) to speed up this process.
 
 To know when your node as finished syncing, you can query it's status from its RPC API:
 
 ```bash
-curl -s 127.0.01:26657/status |  jq '.result.sync_info.catching_up'
+curl -s 127.0.0.1:26657/status |  jq '.result.sync_info.catching_up'
 true # this will print "false" once your node is up to date
 ```

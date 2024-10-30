@@ -2,8 +2,8 @@
 
 ## Prerequisites
 
-- Go 1.16+ (installation instructions available [here](https://golang.org/dl/))
-- Packages: `make`, `gcc` (on ubunty, install them with `sudo apt-get update && sudo apt-get install -y make gcc`)
+- Go 1.18+ (installation instructions available [here](https://golang.org/dl/))
+- Packages: `make`, `gcc` (on Ubuntu, install them with `sudo apt-get update && sudo apt-get install -y make gcc`)
 
 ## Building the code
 
@@ -11,12 +11,6 @@ Download the latest released version from github and build the project using the
 
 ```
 git clone https://github.com/fetchai/fetchd.git && cd fetchd
-```
-
-Then select the particular tag version you want to build, ie:
-
-```bash
-git checkout v0.8.7
 ```
 
 Then build the code with the command:
@@ -61,7 +55,7 @@ You can also verify that you are running the correct version
 fetchd version
 ```
 
-This should print a version number that must be compatible with the network you're connecting to (see the [network page](../networks/) for the list of supported versions per network).
+This should print a version number that must be compatible with the network you're connecting to (see the [network page](../live-networks/) for the list of supported versions per network).
 
 ## FAQ
 

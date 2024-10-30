@@ -90,7 +90,7 @@ You'll be prompted to enter the mnemonic phrase, and it will then print the matc
 
 ### Setup
 
-We recommend hardware wallets as a solution for managing private keys. The Fetch v2.0 ledger is compatible with Ledger Nano devices. To use your Ledger Nano you will need to complete the following steps:
+We recommend hardware wallets as a solution for managing private keys. The Fetch ledger is compatible with Ledger Nano hardware wallets. To use your Ledger Nano you will need to complete the following steps:
 
 1. Set-up your wallet by creating a PIN and passphrase, which must be stored securely to enable recovery if the device is lost or damaged.
 2. Connect your device to your PC and update the firmware to the latest version using the Ledger Live application.
@@ -113,7 +113,7 @@ fetchd keys add <name for the key> --ledger --index 0
   <p>The <code>--ledger</code> flag tells the command line tool to talk to the ledger device and the <code>--index</code> flag selects which HD index should be used.</p>
 </div>
 
-When running this command, the Ledger device will prompt you to verify the genereated address. Once you have done this you will get an output in the following form:
+When running this command, the Ledger device will prompt you to verify the generated address. Once you have done this you will get an output in the following form:
 
 ```bash
 - name: hw1
